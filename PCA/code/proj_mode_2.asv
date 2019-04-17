@@ -1,0 +1,211 @@
+clear all
+clear memory
+clc
+% Specify the folder where the files live.
+inputFolder = 'C:\Users\VThotigar\Downloads\PCA_Project\Data';
+% Check to make sure that folder actually exists.  Warn user if it doesn't.
+if ~isdir(inputFolder)
+  errorMessage = sprintf('Error: The following folder does not exist:\n%s', inputFolder);
+  uiwait(warndlg(errorMessage));
+  return;
+end
+modeldata = [];
+for i = 1 : 25
+	% Get a list of all files in the folder with the desired file name pattern.
+	insideFolder = strcat(inputFolder,'\s');
+	SubFolder{i} = [insideFolder '' num2str(i,'%d')];
+	filePattern = fullfile(SubFolder{i}, '*.pgm'); 
+	theFiles = dir(filePattern);
+	for k = 1 : length(theFiles)
+	  baseFileName = theFiles(k).name;
+	  fullFileName = fullfile(SubFolder{i}, baseFileName);
+	  % Now do whatever you want with this file name,
+	  % such as reading it in as an image array with imread()
+	  imageArray = imread(fullFileName);
+      [r,c] = size(imageArray);
+      temp = reshape(imageArray',r*c,1);
+      modeldata = [modeldata temp];
+	  %imshow(imageArray);  % Display image.
+	  %drawnow; % Force display to update immediately.
+	end
+end
+traindata = [];
+testdata = []
+for i = 26 : 40
+	% Get a list of all files in the folder with the desired file name pattern.
+	insideFolder = strcat(inputFolder,'\s');
+	SubFolder{i} = [insideFolder '' num2str(i,'%d')];
+	filePattern = fullfile(SubFolder{i}, '*.pgm'); 
+	theFiles = dir(filePattern);
+	 % train data
+	for k = 1 : length(theFiles)/2
+	  baseFileName = theFiles(k).name;
+	  fullFileName = fullfile(SubFolder{i}, baseFileName);
+	  % read file
+	  ia1 = imread(fullFileName);
+      [r1,c1] = size(ia1);
+      t1 = reshape(ia1',r1*c1,1);
+      traindata = [traindata t1];
+    end
+    % test data
+    for k = length(theFiles)/2+1 : length(theFiles)
+	  baseFileName = theFiles(k).name;
+	  fullFileName = fullfile(SubFolder{i}, baseFileName);
+	  % read file
+	  ia2 = imread(fullFileName);
+      [r2,c2] = size(ia2);
+      t2 = reshape(ia2',r2*c2,1);
+      testdata = [testdata t2];
+	end
+end
+
+[tr,tc] = size(modeldata);
+modeldata = double(modeldata);
+
+m = mean(modeldata')';
+% Subtract the mean from each image [Centering the data]
+d=modeldata-repmat(m,1,tc);
+
+
+% Compute the covariance matrix (co)
+co=d*d';
+
+% Compute the eigen values and eigen vectors of the covariance matrix
+[eigvector,eigvl]=eig(co);
+
+
+% Sort the eigen vectors according to the eigen values
+eigvalue = diag(eigvl);
+[junk, index] = sort(eigvalue,'descend');
+eigvalue = eigvalue(index);
+eigvector = eigvector(:, index);
+
+% Compute the number of eigen values that greater than zero (you can select any threshold)
+count1=0;
+for i=1:size(eigvalue,1)
+    if(eigvalue(i)>0)
+        count1=count1+1;
+    end
+end
+% And also we can use the eigen vectors that the corresponding eigen values is greater than zero(Threshold) and this method will decrease the
+% computation time and complixity
+
+vec=eigvector(:,1:count1);
+
+% Compute the feature matrix (the space that will use it to project the testing image on it)
+x=vec'*d;
+
+tra
+% If you have test data do the following
+% this test data is close to the first class
+t = double(testdata);
+%Subtract the mean from the test data
+t=t-m;
+%Project the testing data on the space of the training data
+t=vec'*t;
+
+%Obtain euclidean distance between both training and testing
+distance=pdist2(t',x','Euclidean');
+zeroMatrix = zeros(5);
+oneMatrix = ones(5);
+labels = [];
+labelCount = 1;
+D = [];
+for i=1:15 
+    D = [];
+    for j=1:15
+        if(labelCount==j)
+            D = [D,zeroMatrix];
+        else
+            D = [D,oneMatrix];
+        end
+    end
+    labels = vertcat(labels,D);
+    labelCount = labelCount + 1;
+end
+
+%Utilize ezroc function to evaluate performance
+ezroc3(distance,labels,2,'',1);
+
+function [roc,EER,area,EERthr,ALLthr,d,gen,imp]=ezroc3(H,T,plot_stat,headding,printInfo)%,rbst
+t1=min(min(min(H)));
+t2=max(max(max(H)));
+num_subj=size(H,1);
+
+stp=(t2-t1)/500;   %step size here is 0.2% of threshold span, can be adjusted
+
+if stp==0   %if all inputs are the same...
+    stp=0.01;   %Token value
+end
+ALLthr=(t1-stp):stp:(t2+stp);
+if (nargin==1 || (nargin==3 &&  isempty(T))||(nargin==2 &&  isempty(T))||(nargin==4 &&  isempty(T))||(nargin==5 &&  isempty(T)))  %Using only H, multi-class case, and maybe 3D or no plot
+    GAR=zeros(503,size(H,3));  %initialize for accumulation in case of multiple H (on 3rd dim of H)
+    FAR=zeros(503,size(H,3));
+    gen=[]; %genuine scores place holder (diagonal of H), for claculation of d'
+    imp=[]; %impostor scores place holder (non-diagonal elements of H), for claculation of d'
+    for setnum=1:size(H,3); %multiple H measurements (across 3rd dim, where 2D H's stack up)
+        gen=[gen; diag(H(:,:,setnum))]; %digonal scores
+        imp=[imp; H(find(not(eye(size(H,2)))))]; %off-diagonal scores, with off-diagonal indices being listed by find(not(eye(size(H,2)))) 
+        for t=(t1-stp):stp:(t2+stp),    %Note that same threshold is used for all H's, and we increase the limits by a smidgeon to get a full curve
+            ind=round((t-t1)/stp+2);   %current loop index, +2 to start from 1
+            id=H(:,:,setnum)>t;
+            
+            True_Accept=trace(id);  %TP
+            False_Reject=num_subj-True_Accept;  %FN
+            % In the following, id-diag(diag(id)) simply zeros out the diagonal of id
+            True_Reject=sum( sum( (id-diag(diag(id)))==0 ) )-size(id,1); %TN, number of off-diag zeros. We need to subtract out the number of diagonals, as 'id-diag(diag(id))' introduces those many extra zeros into the sum
+            False_Accept=sum( sum( id-diag(diag(id)) ) ); %FP, number of off-diagonal ones
+            
+            GAR(ind,setnum)=GAR(ind,setnum)+True_Accept/(True_Accept+False_Reject); %1-FRR, Denum: all the positives (correctly IDed+incorrectly IDed)
+            FAR(ind,setnum)=FAR(ind,setnum)+False_Accept/(True_Reject+False_Accept); %1-GRR, Denum: all the negatives (correctly IDed+incorrectly IDed)
+        end
+    end
+    GAR=sum(GAR,2)/size(H,3);   %average across multiple H's
+    FAR=sum(FAR,2)/size(H,3);
+elseif (nargin==2 || nargin==3 || nargin == 4 || nargin == 5),   %Regular, 1-class-vs-rest ROC, and maybe 3D or no plot
+    gen=H(find(T)); %genuine scores
+    imp=H(find(not(T))); %impostor scores
+    for t=(t1-stp):stp:(t2+stp),    %span the limits by a smidgeon to get a full curve
+        ind=round((t-t1)/stp+2);   %current loop index, +2 to start from 1
+        id=H>t;
+        
+        True_Accept=sum(and(id,T)); %TP
+        False_Reject=sum(and(not(id),T));   %FN
+        
+        True_Reject=sum(and(not(id),not(T)));   %TN
+        False_Accept=sum(and(id,not(T)));   %FP
+        
+        GAR2(ind)=True_Accept/(True_Accept+False_Reject); %1-FRR, Denum: all the positives (correctly IDed+incorrectly IDed)
+        FAR2(ind)=False_Accept/(True_Reject+False_Accept); %1-GRR, Denum: all the negatives (correctly IDed+incorrectly IDed)
+        
+    end
+    GAR=GAR2';
+    FAR=FAR2';
+end
+roc=[GAR';FAR'];
+FRR=1-GAR;
+[e ind]=min(abs(FRR'-FAR'));    %This is Approx w/ error e. Fix by linear inerpolation of neigborhood and intersecting w/ y=x
+EER=(FRR(ind)+FAR(ind))/2;
+area=abs(trapz(roc(2,:),roc(1,:)));
+EERthr=t1+(ind-1)*stp;%EER threshold
+
+d=abs(mean(gen)-mean(imp))/(sqrt(0.5*(var(gen)+var(imp))));   %Decidability or d'
+
+    if (nargin==1 || nargin==2 || nargin==3 || nargin == 4 || nargin == 5)
+        if plot_stat == 2
+            if printInfo == 1
+                figure, plot(roc(2,:),roc(1,:),'LineWidth',3),axis([-0.002 1 0 1.002]),title(['ROC Curve: ' headding '   EER=' num2str(EER) ',   Area=' num2str(area) ',   Decidability=' num2str(d)]),xlabel('FAR'),ylabel('GAR');
+            elseif printInfo == 0
+                figure, plot(roc(2,:),roc(1,:),'LineWidth',3),axis([-0.002 1 0 1.002]),title(['ROC Curve: ' headding ' ']),xlabel('FAR'),ylabel('GAR');
+            end
+        elseif plot_stat == 3
+            if printInfo == 1
+                figure, plot3(roc(2,:),roc(1,:),ALLthr,'LineWidth',3),axis([0 1 0 1 (t1-stp) (t2+stp)]),title(['3D ROC Curve: ' headding '   EER=' num2str(EER) ',   Area=' num2str(area)  ',   Decidability=' num2str(d)]),xlabel('FAR'),ylabel('GAR'),zlabel('Threshold'),grid on,axis square;
+            elseif printInfo == 0
+                figure, plot3(roc(2,:),roc(1,:),ALLthr,'LineWidth',3),axis([0 1 0 1 (t1-stp) (t2+stp)]),title(['3D ROC Curve: ' headding ' ']),xlabel('FAR'),ylabel('GAR'),zlabel('Threshold'),grid on,axis square;
+            end     
+        else
+            %else it must be 0, i.e. no plot
+        end
+    end
+end
