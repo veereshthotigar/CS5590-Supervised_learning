@@ -95,7 +95,8 @@ target(1:5,:)=tar;
 for i=5:5:195
 target(i+1:i+5,:)=circshift(tar,i,2); %% Creating Targets for each subject%%
 end
-
+save('PCAnormalizedscore.mat','normmat')
+%{
 ezroc3(normmat,target,2,' ',1); %% ROC Plot%%
 
 temporary=normmat;

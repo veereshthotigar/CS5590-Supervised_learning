@@ -1,10 +1,11 @@
 %import PCA and LDA matrices
-PCA = importdata('PCAscores.mat');
-LDA = importdata('LDAscores.mat');
+PCA = importdata('PCAnormalizedscore.mat');
+LDA = importdata('LDAnormalizedscore.mat');
 %initialize matrix for min,max, avg
 mainMin = [];
 mainMax = [];
 mainAvg = [];
+
 
 
 %Create the label matrix
